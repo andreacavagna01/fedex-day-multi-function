@@ -22,11 +22,6 @@ provider "azurerm" {
   features {}
 }
 
-resource "azurerm_resource_group" "rg" {
-name = "${var.azure_resource_group_name}"
-location = "${var.azure_region}"
-}
-
 
 #creating AWS LAMBDA FUNCTION
 resource "aws_iam_role" "iam_for_lambda" {
@@ -49,17 +44,23 @@ resource "aws_iam_role" "iam_for_lambda" {
 EOF
 }
 
+data "archive_file" "lambda_zip_file_int" {
+  type        = "zip"
+  output_path = "/tmp/lambda_zip_file_int.zip"
+  source {
+    content  = file("src/function.py")
+    filename = "function.py"
+  }
+}
+
 resource "aws_lambda_function" "fedex-day-multi-function" {
-  filename      = "lambda_function_payload.zip"
   function_name = "fedex-day-multi-function"
   role          = aws_iam_role.iam_for_lambda.arn
-  handler       = "exports.test"
+  handler       = "function.lambda_handler"
+  filename         = data.archive_file.lambda_zip_file_int.output_path
+  source_code_hash = data.archive_file.lambda_zip_file_int.output_base64sha256
 
-  # The filebase64sha256() function is available in Terraform 0.11.12 and later
-  # For Terraform 0.11.11 and earlier, use the base64sha256() function and the file() function:
-  # source_code_hash = "${base64sha256(file("lambda_function_payload.zip"))}"
-  source_code_hash = filebase64sha256("lambda_function_payload.zip")
+  runtime = "python3.7"
 
-  runtime = "nodejs12.x"
 
 }
