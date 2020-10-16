@@ -62,91 +62,97 @@ provider "azurerm" {
   features {}
 }
 
-variable "prefix" {
-  type    =   string
-  default = "fdmf"
+resource "azurerm_resource_group" "rg" {
+  name = "fdmfrg"
+  location = "northeurope"
 }
-
-variable "location" {
-  type    =   string
-  default = "northeurope"
+resource "random_string" "storage_name" {
+  length = 16
+  special = false
+  upper = false
 }
-
-resource "azurerm_resource_group" "funcdeploy" {
-  name = "rg-${var.prefix}-function"
-  location = var.location
+resource "random_string" "function_name" {
+  length = 16
+  special = false
+  upper = false
 }
-
-resource "azurerm_storage_account" "funcdeploy" {
-  name = "${var.prefix}storage"
-  resource_group_name = azurerm_resource_group.funcdeploy.name
-  location  = azurerm_resource_group.funcdeploy.location
+resource "random_string" "app_service_plan_name" {
+  length = 16
+  special = false
+}
+resource "azurerm_storage_account" "storage" {
+  name = "${random_string.storage_name.result}"
+  resource_group_name = "${azurerm_resource_group.rg.name}"
+  location = "${azurerm_resource_group.rg.location}"
   account_tier = "Standard"
   account_replication_type = "LRS"
 }
-
-resource "azurerm_storage_container" "funcdeploy" {
-  name = "contents"
-  storage_account_name = azurerm_storage_account.funcdeploy.name
+resource "azurerm_storage_container" "storage_container" {
+  name = "func"
+  resource_group_name = "${azurerm_resource_group.rg.name}"
+  storage_account_name = "${azurerm_storage_account.storage.name}"
   container_access_type = "private"
 }
 
-resource "azurerm_application_insights" "funcdeploy" {
-  name = "${var.prefix}-appinsights"
-  location = azurerm_resource_group.funcdeploy.location
-  resource_group_name = azurerm_resource_group.funcdeploy.name
-  application_type = "web"
-
-  # https://github.com/terraform-providers/terraform-provider-azurerm/issues/1303
-  tags = {
-    "hidden-link:${azurerm_resource_group.funcdeploy.id}/providers/Microsoft.Web/sites/${var.prefix}func" = "Resource"
+resource "azurerm_storage_blob" "storage_blob" {
+  name = "azure.zip"
+  resource_group_name = "${azurerm_resource_group.rg.name}"
+  storage_account_name = "${azurerm_storage_account.storage.name}"
+  storage_container_name = "${azurerm_storage_container.storage_container.name}"
+  type = "block"
+  source = "./dist/azure.zip"
+}
+data "azurerm_storage_account_sas" "storage_sas" {
+  connection_string = "${azurerm_storage_account.storage.primary_connection_string}"
+  https_only = false
+  resource_types {
+    service = false
+    container = false
+    object = true
+  }
+  services {
+    blob = true
+    queue = false
+    table = false
+    file = false
+  }
+  start = "2018–03–21"
+  expiry = "2028–03–21"
+  permissions {
+    read = true
+    write = false
+    delete = false
+    list = false
+    add = false
+    create = false
+    update = false
+    process = false
   }
 }
 
-resource "azurerm_app_service_plan" "funcdeploy" {
-  name = "${var.prefix}-functions-consumption-asp"
-  location = azurerm_resource_group.funcdeploy.location
-  resource_group_name = azurerm_resource_group.funcdeploy.name
-  kind = "FunctionApp"
-  reserved = true
-
+resource "azurerm_app_service_plan" "plan" {
+  name = "${random_string.app_service_plan_name.result}"
+  location = "${azurerm_resource_group.rg.location}"
+  resource_group_name = "${azurerm_resource_group.rg.name}"
+  kind = "functionapp"
   sku {
     tier = "Dynamic"
     size = "Y1"
   }
 }
 
-data "archive_file" "azure_function_zip_file_int" {
-  type = "zip"
-  output_path = "/tmp/azure_function_zip_file_int.zip"
-  source {
-    content = file("src/function.py")
-    filename = "function.py"
-  }
-}
-
-resource "random_string" "storage_name" {
-  length = 16
-  special = false
-  upper = false
-}
-
 resource "azurerm_function_app" "function" {
-  name = "${var.prefix}func"
-  location = azurerm_resource_group.funcdeploy.location
-  resource_group_name = azurerm_resource_group.funcdeploy.name
-  app_service_plan_id = azurerm_app_service_plan.funcdeploy.id
-  storage_account_name = azurerm_storage_account.funcdeploy.name
-  storage_account_access_key = azurerm_storage_account.funcdeploy.primary_access_key
-  os_type = "linux"
-  version = "~3"
+  name = "${random_string.storage_name.result}"
+  location = "${azurerm_resource_group.rg.location}"
+  resource_group_name = "${azurerm_resource_group.rg.name}"
+  app_service_plan_id = "${azurerm_app_service_plan.plan.id}"
+  storage_connection_string = "${azurerm_storage_account.storage.primary_connection_string}"
+  version = "~2"
   app_settings = {
-    "FUNCTIONS_WORKER_RUNTIME" = "python"
+    "FUNCTIONS_WORKER_RUNTIME" = "dotnet"
     "FUNCTION_APP_EDIT_MODE" = "readonly"
-    "FUNCTIONS_EXTENSION_VERSION" : "~3",
-    "https_only" = true,
-  }
-  provisioner "local-exec" {
-    command = "az webapp deployment source config-zip --resource-group ${azurerm_resource_group.funcdeploy.name} --name fdmffunc --src ${data.archive_file.azure_function_zip_file_int.output_path}"
+    "https_only" = true
+    "HASH" = "${base64sha256(file("./dist/azure.zip"))}"
+    "WEBSITE_RUN_FROM_PACKAGE" = "https://${azurerm_storage_account.storage.name}.blob.core.windows.net/${azurerm_storage_container.storage_container.name}/${azurerm_storage_blob.storage_blob.name}${data.azurerm_storage_account_sas.storage_sas.sas}"
   }
 }
