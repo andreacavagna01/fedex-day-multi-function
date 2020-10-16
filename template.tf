@@ -46,6 +46,16 @@ data "archive_file" "lambda_zip_file_int" {
   source_dir = "src/"
 }
 
+resource "aws_lambda_function" "fedex-day-multi-function" {
+  function_name = "fedex-day-multi-function"
+  role = aws_iam_role.iam_for_lambda.arn
+  handler = "function.lambda_handler"
+  filename = data.archive_file.lambda_zip_file_int.output_path
+  source_code_hash = data.archive_file.lambda_zip_file_int.output_base64sha256
+
+  runtime = "python3.7"
+}
+
 ########################################################################################################################
 
 provider "azurerm" {
@@ -137,6 +147,6 @@ resource "azurerm_function_app" "function" {
     "https_only" = true,
   }
   provisioner "local-exec" {
-    command = "az webapp deployment source config-zip --resource-group ${azurerm_resource_group.funcdeploy.name} --name ${random_string.storage_name.result} --src ${data.archive_file.azure_function_zip_file_int.output_path}"
+    command = "az webapp deployment source config-zip --resource-group ${azurerm_resource_group.funcdeploy.name} --name fdmffunc --src ${data.archive_file.azure_function_zip_file_int.output_path}"
   }
 }
