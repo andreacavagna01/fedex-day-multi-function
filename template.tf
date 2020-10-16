@@ -47,10 +47,7 @@ EOF
 data "archive_file" "lambda_zip_file_int" {
   type        = "zip"
   output_path = "/tmp/lambda_zip_file_int.zip"
-  source {
-    content  = file("src/function.py")
-    filename = "function.py"
-  }
+  source_dir = "src/"
 }
 
 resource "aws_lambda_function" "fedex-day-multi-function" {
@@ -61,6 +58,4 @@ resource "aws_lambda_function" "fedex-day-multi-function" {
   source_code_hash = data.archive_file.lambda_zip_file_int.output_base64sha256
 
   runtime = "python3.7"
-
-
 }
