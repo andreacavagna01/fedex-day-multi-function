@@ -7,11 +7,11 @@ def lambda_handler(event, context):
     }
 
     response = requests.get('http://34.245.5.31:8200/v1/cubbyhole/besharp', headers=headers)
-    print(response)
+    print(response.json())
     # TODO implement
     return {
         'statusCode': 200,
-        'body': response
+        'body': response.json()
     }
 
 
